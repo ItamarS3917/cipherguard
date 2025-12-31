@@ -26,7 +26,11 @@ A secure-by-design local password manager with AI-powered password generation. C
    npm install
    ```
 
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Copy `.env.example` to `.env.local` and set your Gemini API key:
+   ```bash
+   cp .env.example .env.local
+   # Edit .env.local and add your GEMINI_API_KEY
+   ```
 
 3. Run the app:
    ```bash
