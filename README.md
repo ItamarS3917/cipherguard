@@ -1,8 +1,4 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
-
-# CipherGuard Local Vault
+# 🔐 CipherGuard Local Vault
 
 A secure-by-design local password manager with AI-powered password generation. CipherGuard uses challenge-based authentication (security questions) and encrypts all your passwords locally using AES-256-GCM encryption.
 
@@ -14,6 +10,17 @@ A secure-by-design local password manager with AI-powered password generation. C
 - Auto-lock after 5 minutes of inactivity
 - Lockout protection (3 failed attempts = 1 hour lockout)
 - Available as both web app and native macOS desktop app
+
+## 📥 Download
+
+**Latest Release:** [v1.0.0](https://github.com/ItamarS3917/cipherguard/releases/latest)
+
+**macOS Desktop App (Recommended):**
+- Download `CipherGuard_1.0.0_aarch64.dmg` from [Releases](https://github.com/ItamarS3917/cipherguard/releases)
+- Open the DMG and drag CipherGuard to Applications
+- Launch and start securing your passwords!
+
+**Requirements:** macOS 10.15+ | No API key needed for core features
 
 ## Quick Start
 
@@ -143,14 +150,38 @@ cipherguard/
 - **Styling:** Tailwind CSS (inline classes)
 - **Icons:** Lucide React
 
-## License
+## 🔒 Security & Privacy
 
-[Add your license here]
+**Your data never leaves your computer.** CipherGuard is designed with privacy and security as the top priority:
 
-## Contributing
+- **Local-only storage** - No cloud sync, no servers, no tracking
+- **Military-grade encryption** - AES-256-GCM with PBKDF2 key derivation (100,000 iterations)
+- **Zero-knowledge architecture** - Your security answers never leave your device
+- **Open source** - Audit the code yourself
 
-[Add contributing guidelines here]
+**Data Location:**
+- **macOS:** `~/Library/Application Support/com.cipherguard.vault/`
+- **Web:** Browser localStorage (encrypted)
 
-## AI Studio
+## 🤝 Contributing
 
-View the original app in AI Studio: https://ai.studio/apps/drive/1glchWOGAdqxRGo50w7RAKn4iCr2X2M8b
+Contributions are welcome! Feel free to:
+- Report bugs via [Issues](https://github.com/ItamarS3917/cipherguard/issues)
+- Submit feature requests
+- Open pull requests
+
+## 📄 License
+
+MIT License - See LICENSE file for details
+
+## 🙏 Acknowledgments
+
+Built with:
+- [Tauri](https://tauri.app/) - Rust-based desktop framework
+- [React](https://react.dev/) - UI framework
+- [Google Gemini](https://ai.google.dev/) - AI-powered password generation
+- [Vite](https://vite.dev/) - Build tool
+
+---
+
+**Made with ❤️ and [Claude Code](https://claude.com/claude-code)**
