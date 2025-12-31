@@ -1,0 +1,5 @@
+{
+  "name": "CipherGuard Local Vault",
+  "description": "A secure-by-design local password manager using challenge-based authentication and smart AI password generation.",
+  "requestFramePermissions": []
+}
