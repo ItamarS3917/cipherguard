@@ -3,6 +3,8 @@
  * Uses Web Crypto API with AES-256-GCM encryption
  */
 
+import { argon2id } from '@noble/hashes/argon2';
+
 export interface EncryptedData {
   ciphertext: string; // Base64 encoded encrypted data
   iv: string;         // Base64 encoded initialization vector
@@ -11,6 +13,13 @@ export interface EncryptedData {
 
 const PBKDF2_ITERATIONS = 100000; // OWASP recommended minimum
 const KEY_LENGTH = 256; // AES-256
+
+const ARGON2_PARAMS = {
+  memory: 65536,     // 64 MB
+  iterations: 3,     // OWASP recommended
+  parallelism: 1,    // Browser limitation
+  hashLength: 32     // 256-bit key
+};
 
 /**
  * Derives an AES-256 encryption key from security answers using PBKDF2
@@ -111,6 +120,32 @@ export async function decrypt(encryptedData: EncryptedData, answers: [string, st
  */
 export function generateSalt(): Uint8Array {
   return crypto.getRandomValues(new Uint8Array(16));
+}
+
+/**
+ * Derives a 256-bit key from password using Argon2id
+ * @param password - Master password or recovery key
+ * @param salt - 16-byte salt
+ * @param params - Argon2 parameters
+ * @returns 32-byte derived key
+ */
+export async function deriveKeyFromPassword(
+  password: string,
+  salt: Uint8Array,
+  params: { memory: number; iterations: number; parallelism: number; hashLength: number }
+): Promise<Uint8Array> {
+  // Normalize password (lowercase, trim)
+  const normalized = password.toLowerCase().trim();
+
+  // Derive key using Argon2id
+  const derivedKey = argon2id(normalized, salt, {
+    t: params.iterations,
+    m: params.memory,
+    p: params.parallelism,
+    dkLen: params.hashLength
+  });
+
+  return derivedKey;
 }
 
 // Helper functions for base64 encoding/decoding
