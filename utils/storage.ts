@@ -4,9 +4,9 @@ import { encrypt, decrypt } from './crypto';
 import { storage } from './tauriStorage';
 
 const STORAGE_KEYS = {
-  CONFIG: 'cipherguard_config',
-  PASSWORDS: 'cipherguard_vault',
-  LOCKOUT: 'cipherguard_lockout'
+  CONFIG: 'cipherguard_master_config',  // NEW - changed from cipherguard_config
+  PASSWORDS: 'cipherguard_vault',       // Unchanged
+  LOCKOUT: 'cipherguard_lockout'        // Unchanged
 };
 
 // ============================================================================
