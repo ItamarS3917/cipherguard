@@ -3,7 +3,7 @@
  * Uses Web Crypto API with AES-256-GCM encryption
  */
 
-interface EncryptedData {
+export interface EncryptedData {
   ciphertext: string; // Base64 encoded encrypted data
   iv: string;         // Base64 encoded initialization vector
   salt: string;       // Base64 encoded salt for key derivation
@@ -114,7 +114,7 @@ export function generateSalt(): Uint8Array {
 }
 
 // Helper functions for base64 encoding/decoding
-function bufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
+export function bufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
   const bytes = new Uint8Array(buffer);
   let binary = '';
   for (let i = 0; i < bytes.length; i++) {
@@ -123,11 +123,49 @@ function bufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
   return btoa(binary);
 }
 
-function base64ToBuffer(base64: string): Uint8Array {
+export function base64ToBuffer(base64: string): Uint8Array {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes;
+}
+
+/**
+ * Generates a cryptographically random recovery key
+ * @returns Formatted recovery key (XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX)
+ */
+export function generateRecoveryKey(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+
+  // Convert to hex string
+  const hex = Array.from(bytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase();
+
+  // Format as 8 groups of 4 characters
+  const groups = [];
+  for (let i = 0; i < hex.length; i += 4) {
+    groups.push(hex.slice(i, i + 4));
+  }
+
+  return groups.join('-');
+}
+
+/**
+ * Parses recovery key from user input (strips hyphens, validates)
+ * @returns Normalized hex string or null if invalid
+ */
+export function parseRecoveryKey(input: string): string | null {
+  // Remove hyphens and whitespace
+  const normalized = input.replace(/[-\s]/g, '').toUpperCase();
+
+  // Validate: must be 64 hex characters
+  if (!/^[A-F0-9]{64}$/.test(normalized)) {
+    return null;
+  }
+
+  return normalized;
 }
