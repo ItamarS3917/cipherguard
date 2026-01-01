@@ -148,6 +148,83 @@ export async function deriveKeyFromPassword(
   return derivedKey;
 }
 
+/**
+ * Wraps (encrypts) the vault key with a derived key
+ * @param vaultKey - 32-byte random vault key
+ * @param derivedKey - Key derived from password via Argon2id
+ * @returns EncryptedData structure
+ */
+export async function wrapVaultKey(
+  vaultKey: Uint8Array,
+  derivedKey: Uint8Array
+): Promise<EncryptedData> {
+  // Convert Uint8Array to CryptoKey
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    derivedKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt']
+  );
+
+  // Generate random IV (12 bytes for GCM)
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+
+  // Generate random salt for this encryption (16 bytes)
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+
+  // Encrypt vault key
+  const ciphertextBuffer = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    cryptoKey,
+    vaultKey
+  );
+
+  return {
+    ciphertext: bufferToBase64(ciphertextBuffer),
+    iv: bufferToBase64(iv),
+    salt: bufferToBase64(salt)
+  };
+}
+
+/**
+ * Unwraps (decrypts) the vault key with a derived key
+ * @param wrappedKey - EncryptedData containing wrapped vault key
+ * @param derivedKey - Key derived from user input
+ * @returns Vault key (32 bytes) or null if decryption fails
+ */
+export async function unwrapVaultKey(
+  wrappedKey: EncryptedData,
+  derivedKey: Uint8Array
+): Promise<Uint8Array | null> {
+  try {
+    // Convert Uint8Array to CryptoKey
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      derivedKey,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['decrypt']
+    );
+
+    // Convert from base64
+    const ciphertextBuffer = base64ToBuffer(wrappedKey.ciphertext);
+    const iv = base64ToBuffer(wrappedKey.iv);
+
+    // Decrypt vault key
+    const vaultKeyBuffer = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      cryptoKey,
+      ciphertextBuffer
+    );
+
+    return new Uint8Array(vaultKeyBuffer);
+  } catch (error) {
+    // Decryption failed (wrong password)
+    return null;
+  }
+}
+
 // Helper functions for base64 encoding/decoding
 export function bufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
   const bytes = new Uint8Array(buffer);
