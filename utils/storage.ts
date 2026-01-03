@@ -1,6 +1,6 @@
 
-import { SecurityConfig, PasswordEntry, LockoutState } from '../types';
-import { encrypt, decrypt } from './crypto';
+import { MasterPasswordConfig, PasswordEntry, LockoutState } from '../types';
+import { deriveKeyFromPassword, wrapVaultKey, unwrapVaultKey, parseRecoveryKey, base64ToBuffer, bufferToBase64 } from './crypto';
 import { storage } from './tauriStorage';
 
 const STORAGE_KEYS = {
@@ -10,58 +10,97 @@ const STORAGE_KEYS = {
 };
 
 // ============================================================================
-// Security Config Storage (contains questions + HASHED answers for verification)
+// Master Password Config Storage
 // ============================================================================
 
 /**
- * Hash security answers for storage (SHA-256)
- * We store hashed answers for verification, but use raw answers for encryption
+ * Save master password configuration with wrapped vault keys
  */
-async function hashAnswers(answers: [string, string, string]): Promise<[string, string, string]> {
-  const normalized = answers.map(a => a.toLowerCase().trim());
-  const hashed = await Promise.all(
-    normalized.map(async (answer) => {
-      const encoder = new TextEncoder();
-      const data = encoder.encode(answer);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    })
-  );
-  return hashed as [string, string, string];
-}
+export async function saveMasterPasswordConfig(
+  masterPassword: string,
+  recoveryKey: string,
+  vaultKey: Uint8Array
+): Promise<void> {
+  // Generate random salt for Argon2id (16 bytes)
+  const salt = crypto.getRandomValues(new Uint8Array(16));
 
-/**
- * Save security config with hashed answers
- */
-export async function saveSecurityConfig(config: SecurityConfig, rawAnswers: [string, string, string]) {
-  const hashedAnswers = await hashAnswers(rawAnswers);
-  const configToStore = {
-    ...config,
-    answers: hashedAnswers
+  // Define Argon2 parameters
+  const argon2Params = {
+    memory: 65536,      // 64 MB
+    iterations: 3,      // OWASP recommended
+    parallelism: 1,     // Browser limitation
+    hashLength: 32      // 256-bit key
   };
-  await storage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(configToStore));
+
+  // Derive keys from both master password and recovery key
+  const passwordDerivedKey = await deriveKeyFromPassword(masterPassword, salt, argon2Params);
+  const recoveryDerivedKey = await deriveKeyFromPassword(recoveryKey, salt, argon2Params);
+
+  // Wrap vault key with both derived keys
+  const wrappedVaultKey_password = await wrapVaultKey(vaultKey, passwordDerivedKey);
+  const wrappedVaultKey_recovery = await wrapVaultKey(vaultKey, recoveryDerivedKey);
+
+  // Create config object
+  const config: MasterPasswordConfig = {
+    wrappedVaultKey_password,
+    wrappedVaultKey_recovery,
+    salt: bufferToBase64(salt),
+    argon2Params,
+    isSetup: true
+  };
+
+  // Save to storage
+  await storage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(config));
 }
 
 /**
- * Get security config (contains hashed answers)
+ * Get master password configuration from storage
  */
-export const getSecurityConfig = async (): Promise<SecurityConfig | null> => {
+export async function getMasterPasswordConfig(): Promise<MasterPasswordConfig | null> {
   const stored = await storage.getItem(STORAGE_KEYS.CONFIG);
   if (!stored) return null;
+
   try {
     return JSON.parse(stored);
   } catch {
     return null;
   }
-};
+}
 
 /**
- * Verify if provided answers match stored hashed answers
+ * Authenticate user and get vault key
+ * Tries both master password and recovery key paths
  */
-export async function verifyAnswers(providedAnswers: [string, string, string], config: SecurityConfig): Promise<boolean> {
-  const hashedProvided = await hashAnswers(providedAnswers);
-  return hashedProvided.every((hash, idx) => hash === config.answers[idx]);
+export async function authenticateAndGetVaultKey(
+  input: string,
+  config: MasterPasswordConfig
+): Promise<{ success: boolean; vaultKey?: Uint8Array; error?: string }> {
+  // Parse input (handle recovery key formatting)
+  const normalizedInput = parseRecoveryKey(input) || input;
+
+  // Convert salt from base64
+  const salt = base64ToBuffer(config.salt);
+
+  // Derive key from input
+  const derivedKey = await deriveKeyFromPassword(normalizedInput, salt, config.argon2Params);
+
+  // Try to unwrap vault key with password path
+  let vaultKey = await unwrapVaultKey(config.wrappedVaultKey_password, derivedKey);
+  if (vaultKey) {
+    return { success: true, vaultKey };
+  }
+
+  // Try to unwrap vault key with recovery path
+  vaultKey = await unwrapVaultKey(config.wrappedVaultKey_recovery, derivedKey);
+  if (vaultKey) {
+    return { success: true, vaultKey };
+  }
+
+  // Both failed
+  return {
+    success: false,
+    error: 'Invalid master password or recovery key'
+  };
 }
 
 // ============================================================================
@@ -70,25 +109,79 @@ export async function verifyAnswers(providedAnswers: [string, string, string], c
 
 /**
  * Save encrypted password vault
- * Requires the user's raw security answers to derive encryption key
+ * @param passwords - Array of password entries
+ * @param vaultKey - 32-byte vault key (from authentication)
  */
-export async function savePasswords(passwords: PasswordEntry[], answers: [string, string, string]) {
-  const encryptedData = await encrypt(passwords, answers);
+export async function savePasswords(
+  passwords: PasswordEntry[],
+  vaultKey: Uint8Array
+): Promise<void> {
+  // Import vaultKey as CryptoKey
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    vaultKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt']
+  );
+
+  // Generate IV and salt
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+
+  // Encrypt passwords
+  const encoder = new TextEncoder();
+  const dataBuffer = encoder.encode(JSON.stringify(passwords));
+
+  const ciphertextBuffer = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    cryptoKey,
+    dataBuffer
+  );
+
+  // Store encrypted data
+  const encryptedData = {
+    ciphertext: bufferToBase64(ciphertextBuffer),
+    iv: bufferToBase64(iv),
+    salt: bufferToBase64(salt)
+  };
+
   await storage.setItem(STORAGE_KEYS.PASSWORDS, JSON.stringify(encryptedData));
 }
 
 /**
  * Load and decrypt password vault
- * Requires the user's raw security answers to derive decryption key
+ * @param vaultKey - 32-byte vault key (from authentication)
  */
-export async function getPasswords(answers: [string, string, string]): Promise<PasswordEntry[]> {
+export async function getPasswords(vaultKey: Uint8Array): Promise<PasswordEntry[]> {
   const stored = await storage.getItem(STORAGE_KEYS.PASSWORDS);
   if (!stored) return [];
 
   try {
     const encryptedData = JSON.parse(stored);
-    const decrypted = await decrypt(encryptedData, answers);
-    return decrypted;
+
+    // Import vaultKey as CryptoKey
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      vaultKey,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['decrypt']
+    );
+
+    // Decrypt
+    const ciphertextBuffer = base64ToBuffer(encryptedData.ciphertext);
+    const iv = base64ToBuffer(encryptedData.iv);
+
+    const dataBuffer = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      cryptoKey,
+      ciphertextBuffer
+    );
+
+    const decoder = new TextDecoder();
+    const jsonString = decoder.decode(dataBuffer);
+    return JSON.parse(jsonString);
   } catch (error) {
     console.error('Failed to decrypt password vault:', error);
     return [];
