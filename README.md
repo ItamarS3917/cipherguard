@@ -1,12 +1,13 @@
 # 🔐 CipherGuard Local Vault
 
-A secure-by-design local password manager with AI-powered password generation. CipherGuard uses challenge-based authentication (security questions) and encrypts all your passwords locally using AES-256-GCM encryption.
+A secure-by-design local password manager with AI-powered password generation. CipherGuard uses master password authentication with Argon2id key derivation and encrypts all your passwords locally using AES-256-GCM encryption.
 
 **Key Features:**
-- Challenge-based authentication (no master password to forget)
-- AES-256-GCM encryption for password vault
+- Master password authentication with emergency recovery key
+- Argon2id key derivation (memory-hard, GPU-resistant)
+- AES-256-GCM encryption with key wrapping architecture
 - AI-powered password generation via Google Gemini
-- Password strength analysis
+- Real-time password strength analysis
 - Auto-lock after 5 minutes of inactivity
 - Lockout protection (3 failed attempts = 1 hour lockout)
 - Available as both web app and native macOS desktop app
@@ -71,20 +72,30 @@ npm run tauri:build
 
 ### Security Model
 
-**Authentication:**
-- Users create 3 security questions during initial setup
-- Answers are hashed with SHA-256 before storage (never stored in plaintext)
-- Authentication compares hashed inputs against stored hashes
+**Authentication:** Master password + emergency recovery key
+- Single strong master password (12+ characters recommended)
+- Cryptographically random 32-byte recovery key for account recovery
+- Both can authenticate and unlock the vault
+- No passwords stored (authentication via successful decryption)
 
-**Encryption:**
-- Master key derived from security answers using PBKDF2 (100,000 iterations)
-- Password vault encrypted with AES-256-GCM
-- Each encryption generates unique salt and IV
-- Decryption key only exists in memory while authenticated, cleared on lock
+**Encryption:** AES-256-GCM with key wrapping
+- Random **vault key** (32 bytes) encrypts your password vault
+- Vault key is **wrapped** (encrypted) with both:
+  - Master password-derived key (Argon2id: 64MB memory, 3 iterations)
+  - Recovery key-derived key (Argon2id: 64MB memory, 3 iterations)
+- Password vault encrypted/decrypted with vault key on-the-fly
+- Master password can be changed without re-encrypting entire vault
+
+**Key Derivation:**
+- Argon2id (memory-hard, GPU-resistant)
+- 64MB memory requirement
+- 3 iterations (OWASP recommended)
+- 256-bit output key
 
 **Lockout Protection:**
 - 3 failed authentication attempts triggers 1-hour lockout
 - Auto-lock after 5 minutes of inactivity
+- Vault key cleared from memory on lock
 
 ### Data Storage
 
@@ -92,7 +103,7 @@ npm run tauri:build
 - Uses browser localStorage
 - Data persists until browser cache is cleared
 - Three storage keys:
-  - `cipherguard_config` - Security questions + hashed answers
+  - `cipherguard_master_config` - Wrapped vault keys + Argon2 parameters
   - `cipherguard_vault` - Encrypted password entries
   - `cipherguard_lockout` - Failed attempt tracking
 
@@ -127,15 +138,16 @@ npm run tauri:build
 cipherguard/
 ├── App.tsx                 # Main app controller (state machine)
 ├── components/
-│   ├── SetupScreen.tsx    # Initial security question setup
-│   ├── LockScreen.tsx     # Authentication screen
+│   ├── SetupScreen.tsx    # Multi-step master password setup
+│   ├── LockScreen.tsx     # Authentication screen (password/recovery key)
 │   └── Dashboard.tsx      # Password vault UI
 ├── utils/
-│   ├── crypto.ts          # AES-256-GCM encryption/decryption
-│   ├── storage.ts         # Encrypted storage abstraction
+│   ├── crypto.ts          # Argon2id + AES-256-GCM encryption
+│   ├── storage.ts         # Key wrapping + encrypted storage
 │   └── tauriStorage.ts    # Universal storage adapter (Tauri/localStorage)
 ├── services/
-│   └── geminiService.ts   # AI password generation
+│   ├── geminiService.ts          # AI password generation
+│   └── passwordStrengthService.ts # Rule-based + AI password validation
 ├── types.ts               # TypeScript interfaces
 ├── src-tauri/             # Desktop app Rust backend
 │   ├── src/
@@ -159,8 +171,9 @@ cipherguard/
 **Your data never leaves your computer.** CipherGuard is designed with privacy and security as the top priority:
 
 - **Local-only storage** - No cloud sync, no servers, no tracking
-- **Military-grade encryption** - AES-256-GCM with PBKDF2 key derivation (100,000 iterations)
-- **Zero-knowledge architecture** - Your security answers never leave your device
+- **Military-grade encryption** - AES-256-GCM with Argon2id key derivation (64MB memory, GPU-resistant)
+- **Zero-knowledge architecture** - Your master password never leaves your device
+- **Emergency recovery** - Cryptographically random recovery key prevents permanent lockout
 - **Open source** - Audit the code yourself
 
 **Data Location:**
