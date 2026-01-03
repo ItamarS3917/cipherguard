@@ -1,3 +1,5 @@
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
 export interface StrengthResult {
   score: number;        // 0-100
   feedback: string[];   // Array of suggestions
@@ -110,4 +112,73 @@ export function validateWithRules(password: string): StrengthResult {
   const isValid = password.length >= 12 && score >= 60;
 
   return { score, feedback, level, isValid };
+}
+
+/**
+ * Validate password using Gemini AI (with timeout)
+ */
+export async function validateWithGemini(
+  password: string,
+  timeout: number = 3000
+): Promise<StrengthResult> {
+  try {
+    const genAI = new GoogleGenerativeAI(process.env.API_KEY || '');
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.0-flash-exp',
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'object',
+          properties: {
+            score: { type: 'number', description: 'Score 0-100' },
+            level: { type: 'string', enum: ['weak', 'fair', 'good', 'strong'] },
+            feedback: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Array of improvement suggestions (max 3)'
+            }
+          },
+          required: ['score', 'level', 'feedback']
+        }
+      }
+    });
+
+    const prompt = `Analyze the strength of this master password for a password manager.
+
+Password: "${password}"
+
+Evaluate based on:
+- Length and complexity
+- Entropy and randomness
+- Resistance to dictionary attacks
+- Memorability vs security trade-off
+- Common password patterns
+
+Provide:
+1. Score (0-100) - be strict, this protects all user passwords
+2. Level (weak/fair/good/strong)
+3. Specific, actionable feedback (max 3 suggestions)
+
+IMPORTANT: Minimum acceptable score is 60. Encourage passphrases (4+ random words) over complex short passwords.`;
+
+    const result = await Promise.race([
+      model.generateContent(prompt),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout')), timeout)
+      )
+    ]);
+
+    const response = await result.response;
+    const analysis = JSON.parse(response.text());
+
+    return {
+      score: analysis.score,
+      level: analysis.level,
+      feedback: analysis.feedback,
+      isValid: analysis.score >= 60 && password.length >= 12
+    };
+  } catch (error) {
+    console.warn('Gemini validation failed, using rule-based fallback:', error);
+    throw error; // Let caller handle fallback
+  }
 }
