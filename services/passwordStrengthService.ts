@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI, Type } from '@google/genai';
 
 export interface StrengthResult {
   score: number;        // 0-100
@@ -122,26 +122,7 @@ export async function validateWithGemini(
   timeout: number = 3000
 ): Promise<StrengthResult> {
   try {
-    const genAI = new GoogleGenerativeAI(process.env.API_KEY || '');
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash-exp',
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'object',
-          properties: {
-            score: { type: 'number', description: 'Score 0-100' },
-            level: { type: 'string', enum: ['weak', 'fair', 'good', 'strong'] },
-            feedback: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Array of improvement suggestions (max 3)'
-            }
-          },
-          required: ['score', 'level', 'feedback']
-        }
-      }
-    });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 
     const prompt = `Analyze the strength of this master password for a password manager.
 
@@ -162,14 +143,32 @@ Provide:
 IMPORTANT: Minimum acceptable score is 60. Encourage passphrases (4+ random words) over complex short passwords.`;
 
     const result = await Promise.race([
-      model.generateContent(prompt),
+      ai.models.generateContent({
+        model: 'gemini-2.0-flash-exp',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              score: { type: Type.NUMBER, description: 'Score 0-100' },
+              level: { type: Type.STRING, enum: ['weak', 'fair', 'good', 'strong'] },
+              feedback: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: 'Array of improvement suggestions (max 3)'
+              }
+            },
+            required: ['score', 'level', 'feedback']
+          }
+        }
+      }),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Timeout')), timeout)
       )
     ]);
 
-    const response = await result.response;
-    const analysis = JSON.parse(response.text());
+    const analysis = JSON.parse(result.text);
 
     return {
       score: analysis.score,

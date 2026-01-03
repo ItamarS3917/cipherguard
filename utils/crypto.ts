@@ -3,7 +3,7 @@
  * Uses Web Crypto API with AES-256-GCM encryption
  */
 
-import { argon2id } from '@noble/hashes/argon2';
+import { argon2id } from '@noble/hashes/argon2.js';
 
 export interface EncryptedData {
   ciphertext: string; // Base64 encoded encrypted data
