@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { AppView, SecurityConfig, LockoutState, PasswordEntry } from './types';
+import { AppView, MasterPasswordConfig, LockoutState, PasswordEntry } from './types';
 import * as storage from './utils/storage';
 import SetupScreen from './components/SetupScreen';
 import LockScreen from './components/LockScreen';
@@ -10,23 +10,21 @@ const INACTIVITY_LIMIT = 5 * 60 * 1000; // 5 minutes in milliseconds
 
 const App: React.FC = () => {
   const [view, setView] = useState<AppView>(AppView.LOCK);
-  const [config, setConfig] = useState<SecurityConfig | null>(null);
+  const [config, setConfig] = useState<MasterPasswordConfig | null>(null);
   const [lockout, setLockout] = useState<LockoutState>({ failedAttempts: 0, lockoutUntil: null });
   const [passwords, setPasswords] = useState<PasswordEntry[]>([]);
-  // Store user's raw answers in memory while authenticated (for encryption/decryption)
-  const [userAnswers, setUserAnswers] = useState<[string, string, string] | null>(null);
+  const [vaultKey, setVaultKey] = useState<Uint8Array | null>(null);
 
   const inactivityTimerRef = useRef<number | null>(null);
 
   // Initialize App
   useEffect(() => {
     const loadInitialData = async () => {
-      const storedConfig = await storage.getSecurityConfig();
+      const storedConfig = await storage.getMasterPasswordConfig();
       const storedLockout = await storage.getLockoutState();
 
       setConfig(storedConfig);
       setLockout(storedLockout);
-      // Passwords will be loaded after authentication (they're encrypted)
 
       if (!storedConfig || !storedConfig.isSetup) {
         setView(AppView.SETUP);
@@ -41,7 +39,7 @@ const App: React.FC = () => {
   const handleLock = useCallback(() => {
     setView(AppView.LOCK);
     // Clear sensitive data from memory when locking
-    setUserAnswers(null);
+    setVaultKey(null);
     setPasswords([]);
     if (inactivityTimerRef.current) {
       window.clearTimeout(inactivityTimerRef.current);
@@ -80,43 +78,47 @@ const App: React.FC = () => {
     };
   }, [view, handleLock]);
 
-  const handleSetupComplete = async (newConfig: SecurityConfig) => {
-    // Save config with hashed answers, but keep raw answers for encryption
-    const rawAnswers: [string, string, string] = [
-      newConfig.answers[0],
-      newConfig.answers[1],
-      newConfig.answers[2]
-    ];
+  const handleSetupComplete = async (masterPassword: string, recoveryKey: string) => {
+    // Generate random vault key (32 bytes)
+    const vaultKeyBytes = crypto.getRandomValues(new Uint8Array(32));
 
-    await storage.saveSecurityConfig(newConfig, rawAnswers);
-    // Initialize empty encrypted vault
-    await storage.savePasswords([], rawAnswers);
+    // Save config (wraps vault key with both master password and recovery key)
+    await storage.saveMasterPasswordConfig(masterPassword, recoveryKey, vaultKeyBytes);
 
+    // Load config into state
+    const newConfig = await storage.getMasterPasswordConfig();
     setConfig(newConfig);
-    setUserAnswers(rawAnswers);
+
+    // Initialize empty encrypted vault
+    await storage.savePasswords([], vaultKeyBytes);
+
+    // Store vault key in memory (unlocked state)
+    setVaultKey(vaultKeyBytes);
     setPasswords([]);
     setView(AppView.DASHBOARD);
   };
 
-  const handleUnlock = async (providedAnswers: [string, string, string]) => {
+  const handleUnlock = async (input: string) => {
     if (!config) return;
 
-    // Verify answers against hashed stored answers
-    const isValid = await storage.verifyAnswers(providedAnswers, config);
+    // Authenticate and get vault key (tries both password and recovery paths)
+    const result = await storage.authenticateAndGetVaultKey(input, config);
 
-    if (isValid) {
-      // Reset failed attempts on success
-      const newState = { failedAttempts: 0, lockoutUntil: null };
-      await storage.saveLockoutState(newState);
-      setLockout(newState);
+    if (result.success && result.vaultKey) {
+      // Authentication passed - reset lockout
+      const newLockoutState = { failedAttempts: 0, lockoutUntil: null };
+      await storage.saveLockoutState(newLockoutState);
+      setLockout(newLockoutState);
 
-      // Load encrypted vault with provided answers
-      const decryptedPasswords = await storage.getPasswords(providedAnswers);
+      // Load encrypted vault with vault key
+      const decryptedPasswords = await storage.getPasswords(result.vaultKey);
+
+      // Update state (unlock)
+      setVaultKey(result.vaultKey);
       setPasswords(decryptedPasswords);
-      setUserAnswers(providedAnswers);
       setView(AppView.DASHBOARD);
     } else {
-      // Invalid answers - increment failed attempts
+      // Authentication failed - increment lockout counter
       handleFailedAttempt();
     }
   };
@@ -141,19 +143,19 @@ const App: React.FC = () => {
   };
 
   const handleAddPassword = async (entry: PasswordEntry) => {
-    if (!userAnswers) return; // Safety check
+    if (!vaultKey) return; // Safety check
 
     const updated = [entry, ...passwords];
     setPasswords(updated);
-    await storage.savePasswords(updated, userAnswers);
+    await storage.savePasswords(updated, vaultKey);
   };
 
   const handleDeletePassword = async (id: string) => {
-    if (!userAnswers) return; // Safety check
+    if (!vaultKey) return; // Safety check
 
     const updated = passwords.filter(p => p.id !== id);
     setPasswords(updated);
-    await storage.savePasswords(updated, userAnswers);
+    await storage.savePasswords(updated, vaultKey);
   };
 
   // Rendering logic
@@ -163,11 +165,10 @@ const App: React.FC = () => {
 
   if (view === AppView.LOCK && config) {
     return (
-      <LockScreen 
-        config={config} 
-        lockout={lockout} 
-        onUnlock={handleUnlock} 
-        onFailedAttempt={handleFailedAttempt} 
+      <LockScreen
+        config={config}
+        lockout={lockout}
+        onUnlock={handleUnlock}
       />
     );
   }
