@@ -14,10 +14,10 @@ A secure-by-design local password manager with AI-powered password generation. C
 
 ## 📥 Download
 
-**Latest Release:** [v1.0.0](https://github.com/ItamarS3917/cipherguard/releases/latest)
+**Latest Release:** [v2.0.0](https://github.com/ItamarS3917/cipherguard/releases/latest)
 
 **macOS Desktop App (Recommended):**
-- Download `CipherGuard_1.0.0_aarch64.dmg` from [Releases](https://github.com/ItamarS3917/cipherguard/releases)
+- Download `CipherGuard_2.0.0_aarch64.dmg` from [Releases](https://github.com/ItamarS3917/cipherguard/releases)
 - Open the DMG and drag CipherGuard to Applications
 - Launch and start securing your passwords!
 
