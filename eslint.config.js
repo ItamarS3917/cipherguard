@@ -52,22 +52,26 @@ export default [
       'react-hooks': reactHooksPlugin,
     },
     rules: {
-      ...tsPlugin.configs.recommended.rules,
-      ...reactPlugin.configs.recommended.rules,
-      'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
+      // Disable base rules that are handled by TypeScript
+      'no-unused-vars': 'off',
       
-      // TypeScript specific
-      '@typescript-eslint/no-explicit-any': 'off', // Allow any for flexibility
+      // TypeScript recommended rules
+      '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': ['warn', { 
         argsIgnorePattern: '^_',
         varsIgnorePattern: '^_' 
       }],
       
-      // React specific
+      // React rules
       'react/react-in-jsx-scope': 'off', // Not needed in React 17+
       'react/prop-types': 'off', // Using TypeScript for prop validation
       'react/no-unescaped-entities': 'off', // Allow quotes and apostrophes in JSX
+      'react/jsx-uses-react': 'error',
+      'react/jsx-uses-vars': 'error',
+      
+      // React Hooks rules
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
       
       // General
       'no-console': 'off', // Allow console for debugging
